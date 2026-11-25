@@ -67,6 +67,10 @@ class BoardRecognizer(val templates: PieceTemplateStore) {
             colorConf[i] = (abs(l - colorSplit.threshold) / colorSplit.halfGap).coerceIn(0f, 1f)
         }
 
+        // Hauteur de référence : la plus grande pièce de l'échiquier (le roi dans tous les jeux usuels).
+        val refHeight = cells.indices.filter { occupied[it] }.maxOfOrNull { cells[it].features.height } ?: 0f
+        fun rel(f: SquareFeatures) = if (refHeight > 0f) f.height / refHeight else Float.NaN
+
         // Calibration automatique sur la position initiale.
         val startOrientation = startPositionOrientation(occupied, colors)
         val calibrated = startOrientation != null
@@ -75,7 +79,7 @@ class BoardRecognizer(val templates: PieceTemplateStore) {
             for (c in cells) {
                 val sq = squareOf(c.row, c.col, startOrientation!!)
                 val p = initial.pieceAt(sq) ?: continue
-                learn(p, c.features)
+                learn(p, c.features, rel(c.features))
             }
         }
 
@@ -100,6 +104,7 @@ class BoardRecognizer(val templates: PieceTemplateStore) {
                 "Importez une capture de la position initiale pour calibrer ce jeu de pièces."
         }
         val results = arrayOfNulls<SquareRecognition>(64)
+        val pending = ArrayList<Pending>()
         for ((i, c) in cells.withIndex()) {
             val sq = squareOf(c.row, c.col, whiteAtBottom)
             val occ = c.features.occupancy
@@ -114,9 +119,16 @@ class BoardRecognizer(val templates: PieceTemplateStore) {
                 results[sq] = SquareRecognition(sq, Position.initial().pieceAt(sq), 0.97f.coerceAtMost(occConf.coerceAtLeast(0.9f)))
                 continue
             }
-            val (type, typeConf) = classifyType(c.features, color, all)
-            val conf = minOf(occConf, 0.4f + 0.6f * colorConf[i], typeConf)
-            results[sq] = SquareRecognition(sq, Piece.of(type, color), conf)
+            val costs = typeCosts(c.features, rel(c.features), color, all)
+            pending += Pending(sq, color, costs, minOf(occConf, 0.4f + 0.6f * colorConf[i]))
+        }
+        if (pending.isNotEmpty()) {
+            val (assigned, corrected) = decodeWithRules(pending)
+            if (corrected > 0) warnings += "$corrected pièce(s) ajustée(s) pour respecter les règles (un roi par camp, pions hors des rangées 1 et 8) : vérifiez-les."
+            for (p in pending) {
+                val (type, conf) = assigned.getValue(p.square)
+                results[p.square] = SquareRecognition(p.square, Piece.of(type, p.color), minOf(p.baseConf, conf))
+            }
         }
         val squares = results.map { it!! }
 
@@ -197,27 +209,77 @@ class BoardRecognizer(val templates: PieceTemplateStore) {
         return bottom == PieceColor.WHITE
     }
 
-    private fun classifyType(f: SquareFeatures, color: PieceColor, all: List<PieceTemplate>): Pair<PieceType, Float> {
-        if (all.isEmpty()) return PieceType.PAWN to 0.05f
+    private class Pending(val square: Int, val color: PieceColor, val costs: Map<PieceType, Float>, val baseConf: Float)
+
+    /** Coût (distance) de chaque type de pièce pour une case, d'après les gabarits de la même couleur. */
+    private fun typeCosts(f: SquareFeatures, relHeight: Float, color: PieceColor, all: List<PieceTemplate>): Map<PieceType, Float> {
+        val out = HashMap<PieceType, Float>()
+        if (all.isEmpty()) { PieceType.entries.forEach { out[it] = 1f }; return out }
         val sameColor = all.filter { it.piece.color == color }
         val pool = sameColor.ifEmpty { all }
-        val bestByType = HashMap<PieceType, Float>()
         for (t in pool) {
-            val d = f.distanceTo(t)
-            val cur = bestByType[t.piece.type]
-            if (cur == null || d < cur) bestByType[t.piece.type] = d
+            // Distance exacte (même jeu de pièces) ou indépendante de l'échelle (autre jeu) : la meilleure des deux.
+            val d = if (!relHeight.isNaN() && !t.relHeight.isNaN()) f.scaleFreeDistanceTo(t, relHeight) else f.distanceTo(t)
+            val cur = out[t.piece.type]
+            if (cur == null || d < cur) out[t.piece.type] = d
         }
-        val sorted = bestByType.entries.sortedBy { it.value }
-        val best = sorted[0]
-        val second = sorted.getOrNull(1)?.value
-        var conf = if (second == null) 0.5f else ((second - best.value) / second * 1.8f).coerceIn(0f, 1f)
-        if (best.value > 0.30f) conf *= 0.6f
-        if (sameColor.isEmpty()) conf *= 0.8f
-        return best.key to conf
+        for (t in PieceType.entries) if (t !in out) out[t] = 2f
+        return out
     }
 
-    private fun learn(piece: Piece, f: SquareFeatures) {
-        templates.add(PieceTemplate(piece, f.silhouette.copyOf(), f.width, f.height, f.area))
+    /** Confiance d'un choix : écart relatif avec le meilleur type concurrent. */
+    private fun confidence(costs: Map<PieceType, Float>, chosen: PieceType): Float {
+        val c = costs.getValue(chosen)
+        val other = costs.filterKeys { it != chosen }.values.minOrNull() ?: return 0.5f
+        var conf = if (other <= 0f) 0f else ((other - c) / other * 1.8f).coerceIn(0f, 1f)
+        if (c > 0.30f) conf *= 0.6f
+        return conf
+    }
+
+    /**
+     * Choisit le type de chaque pièce en respectant les règles du jeu : exactement un roi par camp,
+     * aucun pion sur la 1re ou la 8e rangée, au plus 8 pions par camp. Renvoie aussi le nombre de
+     * pièces dont le type a dû être changé par rapport au plus proche gabarit.
+     */
+    private fun decodeWithRules(items: List<Pending>): Pair<Map<Int, Pair<PieceType, Float>>, Int> {
+        val out = HashMap<Int, Pair<PieceType, Float>>()
+        var corrected = 0
+        for (color in PieceColor.entries) {
+            val mine = items.filter { it.color == color }
+            if (mine.isEmpty()) continue
+            fun backRank(sq: Int) = Sq.rank(sq) == 0 || Sq.rank(sq) == 7
+            fun bestType(p: Pending, exclude: Set<PieceType>): PieceType =
+                p.costs.filterKeys { it !in exclude && !(it == PieceType.PAWN && backRank(p.square)) }.minByOrNull { it.value }!!.key
+            // Le roi : la case pour laquelle « roi » coûte le moins par rapport à la meilleure autre hypothèse.
+            val king = mine.minByOrNull { p -> p.costs.getValue(PieceType.KING) - p.costs.filterKeys { it != PieceType.KING }.values.min() }!!
+            val choice = HashMap<Int, PieceType>()
+            choice[king.square] = PieceType.KING
+            for (p in mine) if (p !== king) choice[p.square] = bestType(p, setOf(PieceType.KING))
+            // Au plus 8 pions : on reclasse ceux dont l'alternative coûte le moins.
+            val pawns = mine.filter { choice[it.square] == PieceType.PAWN }
+            if (pawns.size > 8) {
+                pawns.sortedBy { p -> p.costs.filterKeys { it != PieceType.PAWN && it != PieceType.KING }.values.min() - p.costs.getValue(PieceType.PAWN) }
+                    .take(pawns.size - 8)
+                    .forEach { p -> choice[p.square] = bestType(p, setOf(PieceType.KING, PieceType.PAWN)) }
+            }
+            for (p in mine) {
+                val t = choice.getValue(p.square)
+                val free = p.costs.minByOrNull { it.value }!!.key
+                val conf = if (t == free) confidence(p.costs, t) else { corrected++; 0.45f }
+                out[p.square] = t to conf
+            }
+        }
+        return out to corrected
+    }
+
+    private fun learn(piece: Piece, f: SquareFeatures, relHeight: Float = Float.NaN) {
+        templates.add(PieceTemplate(piece, f.silhouette.copyOf(), f.width, f.height, f.area, relHeight))
+        // Les cavaliers regardent à gauche ou à droite selon les jeux : on mémorise aussi le miroir.
+        if (piece.type == PieceType.KNIGHT) {
+            val g = SquareFeatures.GRID
+            val mirrored = FloatArray(g * g) { i -> f.silhouette[(i / g) * g + (g - 1 - i % g)] }
+            templates.add(PieceTemplate(piece, mirrored, f.width, f.height, f.area, relHeight))
+        }
     }
 
     /**
@@ -227,11 +289,13 @@ class BoardRecognizer(val templates: PieceTemplateStore) {
     fun learnFromCorrection(image: RgbImage, result: RecognitionResult, correctBoard: Array<Piece?>) {
         require(correctBoard.size == 64) { "Le plateau corrigé doit contenir 64 cases." }
         val cells = cells(image, result.boardRect)
+        val refHeight = cells.filter { it.features.occupancy >= OCCUPANCY_THRESHOLD }.maxOfOrNull { it.features.height } ?: 0f
         for (c in cells) {
             val sq = squareOf(c.row, c.col, result.whiteAtBottom)
             val correct = correctBoard[sq] ?: continue
             if (c.features.occupancy < OCCUPANCY_THRESHOLD) continue
-            if (result.squares[sq].piece != correct || !templates.hasTemplatesFor(correct)) learn(correct, c.features)
+            val rel = if (refHeight > 0f) c.features.height / refHeight else Float.NaN
+            if (result.squares[sq].piece != correct || !templates.hasTemplatesFor(correct)) learn(correct, c.features, rel)
         }
     }
 
@@ -243,6 +307,20 @@ class BoardRecognizer(val templates: PieceTemplateStore) {
         )
         val f = SquareFeatures.extract(px)
         if (f.occupancy >= OCCUPANCY_THRESHOLD) learn(piece, f)
+    }
+
+    /**
+     * Apprend un jeu de pièces complet (une image de case par pièce, même échelle de dessin) :
+     * la hauteur de chaque pièce est mémorisée relativement à la plus grande (le roi), ce qui permet
+     * ensuite de reconnaître des jeux de pièces dessinés à une autre échelle.
+     */
+    fun learnTemplateSet(squares: Map<Piece, RgbImage>) {
+        val feats = squares.mapValues { (_, img) ->
+            val side = minOf(img.width, img.height).toFloat()
+            SquareFeatures.extract(sampleSquare(img, (img.width - side) / 2f, (img.height - side) / 2f, side, SquareFeatures.N))
+        }.filterValues { it.occupancy >= OCCUPANCY_THRESHOLD }
+        val ref = feats.values.maxOfOrNull { it.height } ?: return
+        for ((piece, f) in feats) learn(piece, f, if (ref > 0f) f.height / ref else Float.NaN)
     }
 
     companion object {

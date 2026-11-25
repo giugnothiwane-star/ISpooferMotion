@@ -15,8 +15,8 @@ android {
         applicationId = "com.chessoverlay.ultimate"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
         // Stockfish est compilé pour ARM64 (Galaxy S23 Ultra : Snapdragon 8 Gen 2).
         ndk { abiFilters += "arm64-v8a" }
     }

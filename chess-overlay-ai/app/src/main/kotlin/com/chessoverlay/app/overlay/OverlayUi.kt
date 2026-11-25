@@ -150,7 +150,7 @@ fun OverlayPanel(
                         Spacer(Modifier.height(10.dp))
                         GlowButton("Réessayer", actions::capture, icon = Icons.Rounded.Screenshot, modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(8.dp))
-                        GlowButton("Corriger dans l'application", actions::openEditor, icon = Icons.Rounded.Edit, secondary = true, modifier = Modifier.fillMaxWidth())
+                        GlowButton(if (phase.canFrame) "Cadrer l'échiquier dans l'application" else "Corriger dans l'application", actions::openEditor, icon = Icons.Rounded.Edit, secondary = true, modifier = Modifier.fillMaxWidth())
                     }
                     is OverlayPhase.Recognized -> {
                         val r = phase.session.result

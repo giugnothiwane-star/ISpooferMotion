@@ -25,6 +25,7 @@ class ChessApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.chessoverlay.app.util.DiagnosticLog.init(this)
         container = AppContainer(this)
     }
 

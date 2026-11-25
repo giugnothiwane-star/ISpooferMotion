@@ -105,6 +105,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_FEN = "com.chessoverlay.extra.FEN"
         const val EXTRA_EDIT_RECOGNITION = "com.chessoverlay.extra.EDIT_RECOGNITION"
         const val EXTRA_SIDE_WHITE = "com.chessoverlay.extra.SIDE_WHITE"
+        const val EXTRA_OPEN_RECOGNITION = "com.chessoverlay.extra.OPEN_RECOGNITION"
+        const val EXTRA_ERROR = "com.chessoverlay.extra.ERROR"
     }
 }
 
@@ -137,11 +139,14 @@ private fun AppRoot(pendingIntent: MutableStateFlow<Intent?>) {
         val i = incoming ?: return@LaunchedEffect
         pendingIntent.value = null
         when {
+            i.getBooleanExtra(MainActivity.EXTRA_OPEN_RECOGNITION, false) -> {
+                recognitionVm.openLastCapture(i.getStringExtra(MainActivity.EXTRA_ERROR)); go(Routes.RECOGNITION)
+            }
             i.getBooleanExtra(MainActivity.EXTRA_EDIT_RECOGNITION, false) -> {
                 app.recognition.session.value?.let { s ->
                     val side = if (i.getBooleanExtra(MainActivity.EXTRA_SIDE_WHITE, true)) com.chessoverlay.chess.PieceColor.WHITE else com.chessoverlay.chess.PieceColor.BLACK
                     editorVm.loadRecognition(s, side); go(Routes.EDITOR)
-                }
+                } ?: run { recognitionVm.openLastCapture(null); go(Routes.RECOGNITION) }
             }
             i.hasExtra(MainActivity.EXTRA_FEN) -> { if (analysisVm.loadFen(i.getStringExtra(MainActivity.EXTRA_FEN)!!)) go(Routes.ANALYSIS) }
             i.action == Intent.ACTION_SEND && i.type?.startsWith("image/") == true -> {

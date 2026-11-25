@@ -29,6 +29,12 @@ internal class SquareFeatures(
     companion object {
         const val N = 48
         const val GRID = 16
+        // Poids réglés par validation sur des jeux de pièces absents des gabarits (voir RealWorldDiagTest).
+        internal var topWeight = 1.4f
+        internal var bottomWeight = 0.4f
+        internal var aspectWeight = 0.6f
+        internal var fillWeight = 0f
+        internal var relHeightWeight = 0.7f
         private const val DIFF_THRESHOLD2 = 40 * 40
         private const val CORNER = 8 // ≈ 17 % de la case : zone des coordonnées a–h / 1–8
         private const val EDGE = 2
@@ -164,4 +170,23 @@ internal class SquareFeatures(
 
     fun distanceTo(t: PieceTemplate): Float =
         shapeDistance(silhouette, width, height, area, t.silhouette, t.width, t.height, t.area)
+
+    /**
+     * Distance indépendante de l'échelle du jeu de pièces : silhouette normalisée, proportions,
+     * taux de remplissage et hauteur relative à la plus grande pièce de l'échiquier ([relHeight]).
+     * Utilisée pour reconnaître des jeux de pièces différents de ceux des gabarits.
+     */
+    fun scaleFreeDistanceTo(t: PieceTemplate, relHeight: Float): Float {
+        // Le haut de la pièce (croix, couronne, mitre, tête de cheval, créneaux) distingue les types ;
+        // le socle, propre à chaque jeu de pièces, compte moins.
+        var d = 0f
+        for (i in silhouette.indices) d += (if (i / GRID < GRID * 6 / 10) topWeight else bottomWeight) * abs(silhouette[i] - t.silhouette[i])
+        d /= silhouette.size
+        if (height > 0f && t.height > 0f) {
+            d += aspectWeight * abs(width / height - t.width / t.height)
+            d += fillWeight * abs(area / (width * height) - t.area / (t.width * t.height))
+        }
+        if (!relHeight.isNaN() && !t.relHeight.isNaN()) d += relHeightWeight * abs(relHeight - t.relHeight)
+        return d
+    }
 }

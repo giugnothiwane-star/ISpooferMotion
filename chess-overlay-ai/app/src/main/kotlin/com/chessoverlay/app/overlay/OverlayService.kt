@@ -29,6 +29,7 @@ import com.chessoverlay.analysis.PositionAnalysis
 import com.chessoverlay.app.MainActivity
 import com.chessoverlay.app.R
 import com.chessoverlay.app.container
+import com.chessoverlay.app.util.DiagnosticLog
 import com.chessoverlay.app.vision.RecognitionSession
 import com.chessoverlay.chess.PieceColor
 import com.chessoverlay.ui.theme.ChessOverlayTheme
@@ -47,7 +48,8 @@ sealed interface OverlayPhase {
     data class Working(val text: String) : OverlayPhase
     data class Recognized(val session: RecognitionSession, val side: PieceColor) : OverlayPhase
     data class Analyzing(val session: RecognitionSession, val side: PieceColor, val analysis: PositionAnalysis?, val running: Boolean) : OverlayPhase
-    data class Error(val message: String) : OverlayPhase
+    /** [canFrame] : la capture est disponible pour un cadrage manuel dans l'application. */
+    data class Error(val message: String, val canFrame: Boolean = false) : OverlayPhase
 }
 
 data class OverlayState(val expanded: Boolean = false, val phase: OverlayPhase = OverlayPhase.Idle)
@@ -113,8 +115,10 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
                         capturer.start(code, data)
                         if (captureAfterGrant) { captureAfterGrant = false; capture() }
                     } catch (e: Exception) {
-                        updateForeground(projection = false)
-                        setPhase(OverlayPhase.Error("Capture impossible : ${e.message}"))
+                        val why = DiagnosticLog.record("autorisation de capture", e)
+                        runCatching { updateForeground(projection = false) }
+                        setPhase(OverlayPhase.Error("Android a refusé de démarrer la capture d'écran ($why). Réessayez ; si le problème persiste, copiez le journal de diagnostic depuis Réglages."))
+                        expand(true)
                     }
                 }
             }
@@ -276,6 +280,15 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         override fun stopAnalysis() { container.engines.analysisEngine.stop() }
         override fun openEditor() {
             val p = _state.value.phase
+            if (p is OverlayPhase.Error && p.canFrame) {
+                // Échiquier non trouvé : la capture est ouverte dans l'application pour un cadrage manuel.
+                startActivity(Intent(this@OverlayService, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra(MainActivity.EXTRA_OPEN_RECOGNITION, true)
+                    .putExtra(MainActivity.EXTRA_ERROR, p.message))
+                expand(false)
+                return
+            }
             val side = when (p) { is OverlayPhase.Recognized -> p.side; is OverlayPhase.Analyzing -> p.side; else -> PieceColor.WHITE }
             startActivity(Intent(this@OverlayService, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -317,7 +330,8 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
             panel?.visibility = View.VISIBLE
             if (!_state.value.expanded) expand(true)
             val bitmap = bmp.getOrElse {
-                setPhase(OverlayPhase.Error("La capture n'a pas abouti (${it.message}). Réessayez."))
+                val why = DiagnosticLog.record("capture", it)
+                setPhase(OverlayPhase.Error("La capture d'écran n'a pas abouti ($why). Réessayez."))
                 return@launch
             }
             setPhase(OverlayPhase.Working("Reconnaissance de l'échiquier…"))
@@ -325,7 +339,9 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val session = container.recognition.recognize(bitmap)
                 setPhase(OverlayPhase.Recognized(session, session.result.suggestedSideToMove ?: if (session.result.whiteAtBottom) PieceColor.WHITE else PieceColor.BLACK))
             } catch (e: Exception) {
-                setPhase(OverlayPhase.Error(e.message ?: "Aucun échiquier reconnu sur l'écran."))
+                val msg = if (e is com.chessoverlay.vision.RecognitionException) e.message!!
+                else "Erreur pendant la reconnaissance (${DiagnosticLog.record("reconnaissance", e)})."
+                setPhase(OverlayPhase.Error(msg, canFrame = container.recognition.lastImage.value != null))
             }
         }
     }
@@ -335,6 +351,7 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         val pos = p.session.result.toPosition(p.side)
         val errors = pos.validationErrors()
         if (errors.isNotEmpty()) {
+            DiagnosticLog.note("position", "invalide après reconnaissance : ${errors.joinToString(" ")} (${pos.toFen()})")
             setPhase(OverlayPhase.Error("Position impossible : ${errors.first()} Corrigez-la dans l'application."))
             return
         }
@@ -348,7 +365,7 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                setPhase(OverlayPhase.Error("Erreur du moteur : ${e.message}"))
+                setPhase(OverlayPhase.Error("Erreur du moteur Stockfish (${DiagnosticLog.record("moteur", e)})."))
             }
         }
     }

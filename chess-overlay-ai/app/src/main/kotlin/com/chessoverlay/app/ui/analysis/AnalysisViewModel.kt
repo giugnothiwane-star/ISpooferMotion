@@ -212,7 +212,7 @@ class AnalysisViewModel(private val app: AppContainer) : ViewModel() {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(analyzing = false, error = "Erreur du moteur : ${e.message}") }
+                _state.update { it.copy(analyzing = false, error = "Erreur du moteur : ${com.chessoverlay.app.util.DiagnosticLog.record("moteur", e)}") }
             }
         }
     }

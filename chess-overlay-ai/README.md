@@ -61,7 +61,12 @@ directement sur le téléphone.
 
 ### Limites connues (honnêtement)
 
-* **Reconnaissance d'image** : conçue pour les échiquiers **numériques plats** (captures d'écran
+* **Reconnaissance d'image** : livrée avec des gabarits de 7 jeux de pièces libres et un décodage qui
+  respecte les règles (un roi par camp, pas de pion en 1re/8e rangée) ; sur des jeux de pièces jamais vus
+  (tests internes), ≈ 97 % des pièces sont reconnues et les cases incertaines sont encadrées. Si l'échiquier
+  n'est pas trouvé, vous pouvez le **cadrer à la main** sur la capture. En cas de problème, Réglages →
+  *Diagnostic* → « Copier le journal » donne le détail technique à transmettre.
+  Elle est conçue pour les échiquiers **numériques plats** (captures d'écran
   d'applications et de sites). Les photos d'un vrai échiquier ou en perspective ne sont pas prises en
   charge. Les types de pièces sont reconnus grâce à des gabarits : ceux des 3 jeux intégrés sont
   préchargés ; pour un autre jeu de pièces, capturez une fois une **position initiale** (apprentissage

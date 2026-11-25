@@ -22,5 +22,9 @@ tasks.withType<Test>().configureEach {
     // Binaire Stockfish hôte (scripts/build_stockfish.sh host) pour les tests d'intégration.
     systemProperty("stockfish.path", rootProject.file("build/stockfish-host/stockfish").absolutePath)
     systemProperty("fixtures.dir", rootProject.file("core/vision/src/test/resources").absolutePath)
+    systemProperty("diag.dir", System.getenv("DIAG_DIR") ?: "/nonexistent")
+    System.getenv("DIAG_SWEEP")?.let { systemProperty("sweep", it) }
+    System.getenv("TEMPLATES_OUT")?.let { systemProperty("templates.out", it) }
+    testLogging.showStandardStreams = true
     testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }

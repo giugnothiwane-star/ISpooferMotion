@@ -29,6 +29,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -125,6 +127,22 @@ fun SettingsScreen(onAbout: () -> Unit, onPositions: () -> Unit) {
                 SectionTitle("Langue")
                 InfoRow("Langue de l'interface", "Français")
                 Text("Cette version est entièrement rédigée en français ; aucune autre langue n'est encore disponible.", style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted)
+            }
+            GlassCard(Modifier.fillMaxWidth()) {
+                SectionTitle("Diagnostic")
+                Text(
+                    "En cas de problème (capture, reconnaissance, moteur), le détail technique est conservé localement. " +
+                        "Copiez-le pour le transmettre avec votre signalement.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.TextMuted,
+                )
+                Spacer(Modifier.height(8.dp))
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                var copied by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                GlowButton(if (copied) "Journal copié" else "Copier le journal de diagnostic", {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(com.chessoverlay.app.util.DiagnosticLog.read())); copied = true
+                }, secondary = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                GlowButton("Effacer le journal", { com.chessoverlay.app.util.DiagnosticLog.clear(); copied = false }, secondary = true, modifier = Modifier.fillMaxWidth())
             }
             GlowButton("À propos, licences et sources", onAbout, icon = Icons.Rounded.Info, secondary = true, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(28.dp))
