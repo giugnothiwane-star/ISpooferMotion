@@ -1,0 +1,14 @@
+.gradle/
+build/
+*/build/
+core/*/build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+# Binaire généré par scripts/build_stockfish.sh (≈ 80 Mo, recompilé par la CI)
+app/src/main/jniLibs/
+
+# Le .gitignore racine exclut *.txt : on conserve les fixtures et notices du projet Android.
+!*.txt

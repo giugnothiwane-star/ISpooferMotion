@@ -1,0 +1,6 @@
+lichess_cburnett_start|rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1|0|220|540|true
+lichess_cburnett_mid|r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R b KQkq - 0 4|20|300|496|true
+lichess_cburnett_black|rnbqkb1r/pp2pppp/3p1n2/8/3NP3/8/PPP2PPP/RNBQKB1R w KQkq - 1 5|0|380|720|false
+chesscom_merida_start|rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1|0|180|540|true
+chesscom_merida_ep|rnbqkbnr/ppp1p1pp/5p2/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3|10|260|520|true
+chesscom_merida_mid|2r3k1/1q3pp1/p3pn1p/1p1b4/3P4/1B2PN2/PQ3PPP/2R3K1 w - - 0 25|24|330|552|true

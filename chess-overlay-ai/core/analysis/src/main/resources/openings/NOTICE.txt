@@ -1,0 +1,3 @@
+openings.tsv est dérivé de https://github.com/lichess-org/chess-openings
+(base d'ouvertures ECO de Lichess, placée dans le domaine public, CC0 1.0).
+La colonne « uci » a été calculée à partir de la colonne « pgn ».
